@@ -17,14 +17,16 @@ package raft
 //   in the same server.
 //
 
-import "sync"
+import (
+	"math/rand"
+	"sync"
+	"time"
+)
 import "sync/atomic"
 import "../labrpc"
 
 // import "bytes"
 // import "../labgob"
-
-
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -43,6 +45,10 @@ type ApplyMsg struct {
 	CommandIndex int
 }
 
+type LogEntry struct {
+	EntryIndex int
+}
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -53,11 +59,26 @@ type Raft struct {
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
+
+	state int //0: leader 1: candidate 2: follower
+	isReceivedHeart bool // whether has received a heartbeat during a election check loop
+
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	currentTerm int
+	votedFor    int
+	log         []LogEntry
 
+	commitIndex int
+	lastApplied int
+
+	// leader state
+	nextIndex  []int
+	matchIndex []int
 }
+
+// for concurrency access safety
 
 // return currentTerm and whether this server
 // believes it is the leader.
@@ -66,7 +87,68 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.state == 0 {
+		isleader = true
+	} else {
+		isleader = false
+	}
+	term = rf.currentTerm
+	DPrintf("%v GetState %v %v", rf.me, term, isleader)
 	return term, isleader
+}
+
+func (rf *Raft) getOnlyState() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.state
+}
+
+func (rf *Raft) setState(state int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.state = state
+}
+
+func (rf *Raft) getIsReceivedHeart() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.isReceivedHeart
+}
+
+func (rf *Raft) setIsReceivedHeart(isReceivedHeart bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.isReceivedHeart = isReceivedHeart
+}
+
+func (rf *Raft) getCurrentTerm() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.currentTerm
+}
+
+func (rf *Raft) setCurrentTerm(newTerm int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if newTerm < 0 {
+		rf.currentTerm++
+	} else {
+		rf.currentTerm = newTerm
+	}
+}
+
+func (rf *Raft) getVoteFor() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.votedFor
+}
+
+func (rf *Raft) setVoteFor(voteFor int) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.votedFor = voteFor
 }
 
 //
@@ -84,7 +166,6 @@ func (rf *Raft) persist() {
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
 }
-
 
 //
 // restore previously persisted state.
@@ -108,23 +189,38 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
-
-
 //
-// example RequestVote RPC arguments structure.
+// RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 //
-// example RequestVote RPC reply structure.
+// RequestVote RPC reply structure.
 // field names must start with capital letters!
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
+	Term 		int
+	VoteGranted bool
+}
+
+type AppendEntriesArgs struct {
+	Term int
+	LeaderId int
+	PrevLogIndex int
+	PrevLogTerm int
+}
+
+type AppendEntriesReply struct {
+	Term int
+	Success bool
 }
 
 //
@@ -132,6 +228,20 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	reply.Term = rf.getCurrentTerm()
+	// If server has voted for other server (not self), it cannot vote for a second one
+	if rf.getCurrentTerm() < args.Term {
+		rf.setCurrentTerm(args.Term)
+		rf.setVoteFor(args.CandidateId)
+		rf.setState(2)
+		reply.VoteGranted = true
+		rf.setIsReceivedHeart(true)
+		DPrintf("%v vote for %v (%v vs %v)-- %v\n", rf.me,
+			args.CandidateId, rf.getCurrentTerm(),
+			args.Term, reply.VoteGranted)
+	} else {
+		reply.VoteGranted = false
+	}
 }
 
 //
@@ -168,7 +278,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -189,7 +298,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-
 
 	return index, term, isLeader
 }
@@ -214,6 +322,114 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
+func (rf *Raft) electionCheckLoop()  {
+	for !rf.killed() {
+		// not leader and not receive heartbeat
+		if rf.getOnlyState() != 0 && !rf.getIsReceivedHeart() {
+			positiveVote := 0
+			DPrintf("%v start a election term\n", rf.me)
+			rf.setCurrentTerm(-1)
+			rf.setState(1)
+			// vote for self
+			rf.setVoteFor(rf.me)
+			for i := 0; i < len(rf.peers); i++ {
+				if i == rf.me {
+					continue
+				}
+				// if leader has been elected, there is no need to compete
+				if rf.getOnlyState() != 1 {
+					break
+				}
+				// avoid bottleneck
+				go func(index int) {
+					request := RequestVoteArgs{
+						Term:         rf.currentTerm,
+						CandidateId:  rf.me,
+						LastLogIndex: rf.commitIndex,
+						LastLogTerm:  rf.currentTerm,
+					}
+					reply := RequestVoteReply{}
+					DPrintf("%v wait for vote from %v", rf.me, index)
+					result := rf.sendRequestVote(index, &request, &reply)
+					DPrintf("%v get vote from %v", rf.me, index)
+					if result && reply.VoteGranted {
+						positiveVote++
+					} else {
+						DPrintf("%v get timeout from %v", rf.me, index)
+					}
+				}(i)
+			}
+			// wait for vote, timeout ones will not include
+			time.Sleep(100*time.Millisecond)
+			// Win majority vote
+			// If server still is a candidate, it votes for itself
+			if rf.getOnlyState() == 1 && positiveVote >= int(len(rf.peers)/2) {
+				DPrintf("%v win the leader\n", rf.me)
+				rf.setState(0)
+				go rf.heartBeatLoop()
+			}
+			rf.setIsReceivedHeart(false)
+			// Random timeout
+			time.Sleep(time.Duration(rand.Intn(150) + 200)*time.Millisecond)
+		} else {
+			rf.setIsReceivedHeart(false)
+			DPrintf("%v wait for heartbeat", rf.me)
+			// Election timeout
+			time.Sleep(200*time.Millisecond)
+		}
+	}
+}
+
+func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.RequestHeartBeat", args, reply)
+	return ok
+}
+
+// leader send heartbeat to all peers to extend lease
+func (rf *Raft) heartBeatLoop() {
+	for !rf.killed() {
+		if rf.getOnlyState() != 0 {
+			break
+		}
+		for i := 0; i < len(rf.peers); i++ {
+			if i == rf.me {
+				continue
+			}
+			go func(index int) {
+				args := AppendEntriesArgs{
+					Term:     rf.getCurrentTerm(),
+					LeaderId: rf.me,
+				}
+				reply := AppendEntriesReply{}
+				result := rf.sendHeartBeat(index, &args, &reply)
+				if result {
+					if !reply.Success {
+						rf.setState(2)
+						rf.setCurrentTerm(reply.Term)
+					}
+				}
+			}(i)
+		}
+		// period span (10 per second)
+		time.Sleep(100*time.Millisecond)
+	}
+}
+
+// handle heartbeat sent from leader
+func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	DPrintf("%v receive heartbeat from %v %v-%v\n", rf.me,
+		args.LeaderId, rf.getCurrentTerm(), args.Term)
+	reply.Term = rf.getCurrentTerm()
+	if args.Term < rf.getCurrentTerm() {
+		reply.Success = false
+	} else {
+		reply.Success = true
+		rf.setIsReceivedHeart(true)
+		rf.setCurrentTerm(args.Term)
+		rf.setState(2)
+	}
+}
+
 //
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -231,12 +447,18 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	// begin as follower
+	rf.state = 2
+	// wait a span for leader to send
+	rf.isReceivedHeart = true
+	rf.currentTerm = 0
 
 	// Your initialization code here (2A, 2B, 2C).
+	DPrintf("%v init\n", rf.me)
+	go rf.electionCheckLoop()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-
 
 	return rf
 }
