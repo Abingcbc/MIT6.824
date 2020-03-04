@@ -265,6 +265,8 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.currentTerm = currentTerm
 		rf.votedFor = voteFor
 		rf.log = log
+		DPrintf("%v %v %v %v", rf.me,
+			rf.currentTerm, rf.votedFor, rf.log)
 	}
 }
 
@@ -339,6 +341,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.setCurrentTerm(args.Term)
 		rf.setState(2)
 		rf.setVoteFor(args.CandidateId)
+		rf.persist()
 		reply.VoteGranted = true
 		rf.setIsReceivedHeart(true)
 		DPrintf("%v vote for %v (%v vs %v)", rf.me,
@@ -434,12 +437,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		}
 		rf.log = append(rf.log, newEntry)
 		rf.mu.Unlock()
-		go rf.replicateCommandLoop(newEntry)
-		//if index < 100 {
-		//	DPrintf("%v receive command %v-%v: %v", rf.me,
-		//		newEntry.Index, newEntry.Term, newEntry.Log)
-		//}
 		rf.persist()
+		go rf.replicateCommandLoop(newEntry)
+		if index < 100 {
+			DPrintf("%v receive command %v-%v: %v", rf.me,
+				newEntry.Index, newEntry.Term, newEntry.Log)
+		}
 	}
 	return index, term, isLeader
 }
@@ -523,6 +526,7 @@ func (rf *Raft) electionCheckLoop()  {
 			if rf.getOnlyState() == 1 && vote >= int(len(rf.peers)/2) {
 				DPrintf("%v win the leader\n", rf.me)
 				rf.setState(0)
+				rf.persist()
 				go rf.heartBeatLoop()
 			}
 			rf.setIsReceivedHeart(false)
@@ -565,6 +569,7 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 			for !rf.killed() && (!response || !reply.Success) {
 				if !response {
 					response = rf.sendHeartBeat(server, args, reply)
+					//return
 				} else if !reply.Success {
 					// There are two reasons for false result
 					// One is leader fall behind
@@ -573,7 +578,6 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 							rf.me, server)
 						rf.setState(2)
 						rf.setCurrentTerm(reply.Term)
-						rf.persist()
 						return
 					}
 					if args.Term < rf.getCurrentTerm() {
@@ -624,28 +628,29 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 				}
 			}
 			//DPrintf("%v replicate success", server)
+			if rf.killed() {
+				return
+			}
 			receiveSuccess.Lock()
 			rf.nextIndex[server] = command.Index+1
 			receiveSuccess.voteNumber++
+			majority := len(rf.peers)/2
+			temp := receiveSuccess.voteNumber
 			receiveSuccess.Unlock()
+			if temp+1 > majority {
+				// replicate successfully on majority, start commit
+				if command.Term == rf.getCurrentTerm() {
+					// out-of-order request
+					if command.Index > rf.getCommitIndex() {
+						rf.setCommitIndex(command.Index)
+					}
+					//DPrintf("leader %v start apply to %v", rf.me,
+					//	command.Index)
+					rf.apply()
+					rf.persist()
+				}
+			}
 		}(i, &args, &reply)
-	}
-	majority := len(rf.peers)/2
-	for !rf.killed() {
-		receiveSuccess.Lock()
-		temp := receiveSuccess.voteNumber
-		receiveSuccess.Unlock()
-		if temp+1 > majority {
-			break
-		}
-		time.Sleep(50*time.Millisecond)
-	}
-	// replicate successfully on majority, start commit
-	if command.Term == rf.getCurrentTerm() {
-		rf.setCommitIndex(command.Index)
-		DPrintf("leader %v start apply to %v", rf.me,
-			command.Index)
-		rf.apply()
 	}
 }
 
@@ -674,6 +679,7 @@ func (rf *Raft) heartBeatLoop() {
 					if !reply.Success {
 						rf.setState(2)
 						rf.setCurrentTerm(reply.Term)
+						rf.setVoteFor(-1)
 						rf.persist()
 					}
 				}
@@ -702,6 +708,7 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 		rf.setIsReceivedHeart(true)
 		rf.setCurrentTerm(args.Term)
 		rf.setState(2)
+		rf.setVoteFor(-1)
 		rf.persist()
 		// piggybacking commit message
 		if args.LeaderCommit > rf.getCommitIndex() {
@@ -724,15 +731,15 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 			} else {
 				rf.setCommitIndex(args.LeaderCommit)
 			}
-			DPrintf(" %v start apply %v %v", rf.me, args.LeaderCommit, lastEntryIndex)
+			DPrintf(" %v start apply %v %v", rf.me, args.LeaderCommit, rf.getAllLog())
 			rf.apply()
+			rf.persist()
 		}
 		return
 	}
 	// following is for replicate log entries
 	// log doesn't contain an entry at prevLogIndex
 	// whose term matches prevLogTerm
-	DPrintf("%v receive %v command", rf.me, len(args.Entries))
 	rf.mu.Lock() // Handle one append without disturb
 	defer rf.mu.Unlock()
 	reply.ConflictTerm = 0
@@ -761,35 +768,30 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 			return
 		}
 	}
-	//isMatch := true
-	//nextIndex := args.PrevLogIndex+1
-	//for i, entry := range args.Entries {
-	//	if nextIndex + i > logLength {
-	//		isMatch = false
-	//		break
-	//	} else if rf.log[nextIndex+i-1].Term != entry.Term {
-	//		isMatch = false
-	//	}
-	//}
-	//if !isMatch {
-	//	// 因为前面已经判断过了，所以这里可以做截断
-	//	entries := make([]LogEntry, len(args.Entries))
-	//	copy(entries, args.Entries)
-	//	rf.log = append(rf.log[:nextIndex-1], entries...)
-	//	//DPrintf("%v append entries %v(%v)", rf.me,
-	//	//	len(rf.log), rf.log[len(rf.log)-1].Index)
-	//	rf.mu.Unlock()
-	//	rf.persist()
-	//	rf.mu.Lock()
-	//}
-	for _, entry := range args.Entries {
-		if entry.Index-1 < logLength {
-			rf.log[entry.Index-1] = entry
-		} else {
-			rf.log = append(rf.log, entry)
+	isMatch := true
+	nextIndex := args.PrevLogIndex+1
+	for i, entry := range args.Entries {
+		if nextIndex + i > logLength {
+			isMatch = false
+			break
+		} else if rf.log[nextIndex+i-1].Term != entry.Term {
+			isMatch = false
 		}
 	}
+	if !isMatch {
+		// 因为前面已经判断过了，所以这里可以做截断
+		entries := make([]LogEntry, len(args.Entries))
+		copy(entries, args.Entries)
+		rf.log = append(rf.log[:nextIndex-1], entries...)
+		//DPrintf("%v append entries %v(%v)", rf.me,
+		//	len(rf.log), rf.log[len(rf.log)-1].Index)
+	}
+	DPrintf("%v receive %v command (%v)", rf.me,
+		len(args.Entries), len(rf.log))
 	reply.Success = true
+	rf.mu.Unlock()
+	rf.persist()
+	rf.mu.Lock()
 }
 
 //
