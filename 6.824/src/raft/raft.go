@@ -328,6 +328,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// If server has voted for other server (not self), it cannot vote for a second one
 	if rf.getCurrentTerm() < args.Term {
 		// if not in same term, definitely not up-to-date
+		rf.setCurrentTerm(args.Term)
+		rf.setState(2)
 		if args.LastLogTerm < rf.getLog(rf.getLogLength()).Term {
 			reply.VoteGranted = false
 			return
@@ -338,8 +340,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 				return
 			}
 		}
-		rf.setCurrentTerm(args.Term)
-		rf.setState(2)
 		rf.setVoteFor(args.CandidateId)
 		rf.persist()
 		reply.VoteGranted = true
@@ -397,8 +397,8 @@ func (rf *Raft) apply() {
 			Command:      applyEntry.Log,
 			CommandIndex: applyEntry.Index,
 		}
-		DPrintf("%v apply %v command %v",
-			rf.me, applyEntry.Index, applyEntry.Log)
+		//DPrintf("%v apply %v command %v",
+		//	rf.me, applyEntry.Index, applyEntry.Log)
 		rf.applyChan <- applyMsg
 		rf.lastApplied++
 	}
@@ -482,7 +482,6 @@ func (rf *Raft) electionCheckLoop()  {
 				if i == rf.me {
 					continue
 				}
-				// if leader has been elected, there is no need to compete
 				if rf.getOnlyState() != 1 {
 					break
 				}
@@ -504,6 +503,10 @@ func (rf *Raft) electionCheckLoop()  {
 					}
 					if !result {
 						//DPrintf("%v get vote timeout from %v", rf.me, index)
+						return
+					}
+					// if leader has been elected, there is no need to compete
+					if rf.getOnlyState() != 1 || rf.getCurrentTerm() != request.Term{
 						return
 					}
 					if !reply.VoteGranted {
@@ -580,9 +583,9 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 						rf.setCurrentTerm(reply.Term)
 						return
 					}
-					if args.Term < rf.getCurrentTerm() {
-						DPrintf("abandon command %v to %v (%v-%v)",
-							entries[0].Log, server, args.Term, reply.Term)
+					if rf.getOnlyState() != 0 || args.Term != rf.getCurrentTerm() {
+						//DPrintf("abandon command %v to %v (%v-%v)",
+						//	entries[0].Log, server, args.Term, reply.Term)
 						return
 					}
 					// One is follower doesn't have entries before
@@ -643,11 +646,11 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 					// out-of-order request
 					if command.Index > rf.getCommitIndex() {
 						rf.setCommitIndex(command.Index)
+						//DPrintf("leader %v start apply to %v", rf.me,
+						//	command.Index)
+						rf.apply()
+						rf.persist()
 					}
-					//DPrintf("leader %v start apply to %v", rf.me,
-					//	command.Index)
-					rf.apply()
-					rf.persist()
 				}
 			}
 		}(i, &args, &reply)
@@ -697,11 +700,13 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 	if args.Term < rf.getCurrentTerm() {
 		reply.Success = false
 		return
+	} else if rf.getCurrentTerm() < args.Term {
+		reply.Success = true
+		rf.setCurrentTerm(args.Term)
+		rf.setState(2)
+		rf.setIsReceivedHeart(true)
+		rf.persist()
 	}
-	//if args.Term > rf.getCurrentTerm() {
-	//	rf.setState(2)
-	//	rf.persist()
-	//}
 	// heartbeat
 	if len(args.Entries) == 0 {
 		reply.Success = true
@@ -731,7 +736,7 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 			} else {
 				rf.setCommitIndex(args.LeaderCommit)
 			}
-			DPrintf(" %v start apply %v %v", rf.me, args.LeaderCommit, rf.getAllLog())
+			//DPrintf(" %v start apply %v %v", rf.me, args.LeaderCommit, rf.getAllLog())
 			rf.apply()
 			rf.persist()
 		}
@@ -792,6 +797,7 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 	rf.mu.Unlock()
 	rf.persist()
 	rf.mu.Lock()
+	rf.setIsReceivedHeart(true)
 }
 
 //
