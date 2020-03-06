@@ -637,10 +637,10 @@ func (rf *Raft) replicateCommandLoop(command LogEntry) {
 			receiveSuccess.Lock()
 			rf.nextIndex[server] = command.Index+1
 			receiveSuccess.voteNumber++
-			majority := len(rf.peers)/2
+			majority := int(len(rf.peers)/2)
 			temp := receiveSuccess.voteNumber
 			receiveSuccess.Unlock()
-			if temp+1 > majority {
+			if temp == majority {
 				// replicate successfully on majority, start commit
 				if command.Term == rf.getCurrentTerm() {
 					// out-of-order request
@@ -796,8 +796,8 @@ func (rf *Raft) RequestHeartBeat(args *AppendEntriesArgs, reply *AppendEntriesRe
 	reply.Success = true
 	rf.mu.Unlock()
 	rf.persist()
-	rf.mu.Lock()
 	rf.setIsReceivedHeart(true)
+	rf.mu.Lock()
 }
 
 //
