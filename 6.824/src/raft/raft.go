@@ -76,8 +76,6 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 
-	applyCond     *sync.Cond // signal for committing entries
-
 	electionTimeout  int
 	heartbeatTimeout int
 
@@ -319,7 +317,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					rf.commitIndex = indexOfLastNewEntry
 				}
 				// apply logs
-				rf.applyCond.Broadcast()
+				go rf.apply()
 				if len(args.Entries) != 0 {
 					DPrintf("[AppendEntries]: Id %v Term %v apply log to %v", rf.me,
 						rf.CurrentTerm, rf.commitIndex)
@@ -527,7 +525,7 @@ func (rf *Raft) broadcastAppendEntries(index int, term int, commitIndex int,
 							rf.commitIndex = index
 							// notify other peers to commit
 							go rf.broadcastHeartBeat()
-							rf.applyCond.Broadcast()
+							go rf.apply()
 							DPrintf("[broadcastAppendEntries]: Id %v Term %v commit %v", rf.me,
 								rf.CurrentTerm, rf.commitIndex)
 						}
@@ -541,22 +539,17 @@ func (rf *Raft) broadcastAppendEntries(index int, term int, commitIndex int,
 func (rf *Raft) apply() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	for {
-		commitIndex := rf.commitIndex
-		lastApplied := rf.lastApplied
-		if lastApplied == commitIndex {
-			// already commit, hang up and return
-			rf.applyCond.Wait()
-		} else {
-			for i := lastApplied+1; i <= commitIndex; i++ {
-				applyMsg := ApplyMsg{
-					CommandValid: true,
-					Command:      rf.Log[i].Log,
-					CommandIndex: i,
-				}
-				rf.lastApplied = i
-				rf.applyChan <- applyMsg
+	commitIndex := rf.commitIndex
+	lastApplied := rf.lastApplied
+	if lastApplied != commitIndex {
+		for i := lastApplied+1; i <= commitIndex; i++ {
+			applyMsg := ApplyMsg{
+				CommandValid: true,
+				Command:      rf.Log[i].Log,
+				CommandIndex: i,
 			}
+			rf.lastApplied = i
+			rf.applyChan <- applyMsg
 		}
 	}
 }
@@ -593,6 +586,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		rf.persist()
 
 		rf.latestSendHeartbeatTime = time.Now().UnixNano()
+		DPrintf("[Start]: Id %v Term %d new command %v", rf.me,
+			rf.CurrentTerm, index)
 		go rf.broadcastAppendEntries(index, rf.CurrentTerm, rf.commitIndex, nReplica)
 		rf.mu.Unlock()
 	}
@@ -772,7 +767,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.applyChan = applyCh
 	rf.state = 2
 	rf.leaderId = -1
-	rf.applyCond = sync.NewCond(&rf.mu)
 	rf.heartbeatTimeout = 120
 	rf.resetElectionTimer()
 	rf.electionTimeoutChan = make(chan bool)
@@ -793,7 +787,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.electionCheckLoop()
 	go rf.heartBeatLoop()
 	go rf.eventLoop()
-	go rf.apply()
 
 	rf.mu.Lock()
 	rf.readPersist(persister.ReadRaftState())
