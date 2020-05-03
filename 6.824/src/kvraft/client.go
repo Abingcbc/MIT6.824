@@ -1,13 +1,19 @@
 package kvraft
 
-import "../labrpc"
+import (
+	"../labrpc"
+	"sync/atomic"
+	"time"
+)
 import "crypto/rand"
 import "math/big"
-
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	leaderId int
+	me       int64
+	globalId int64
 }
 
 func nrand() int64 {
@@ -21,6 +27,9 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.leaderId = 0
+	ck.me = nrand()
+	ck.globalId = 0
 	return ck
 }
 
@@ -39,6 +48,20 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
+	args := GetArgs{Key: key}
+	var reply GetReply
+	DPrintf("[client.Get]: Client %v key %v value %v", ck.me, key, reply.Value)
+	for i := 0; i < 8000; i++ {
+		reply = GetReply{}
+		ok := ck.servers[ck.leaderId].Call("KVServer.Get", &args, &reply)
+		if !ok || reply.Err == "NotLeaderError"{
+			time.Sleep(time.Millisecond * 10)
+			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
+		} else {
+			time.Sleep(time.Millisecond * 100)
+			return reply.Value
+		}
+	}
 	return ""
 }
 
@@ -54,6 +77,27 @@ func (ck *Clerk) Get(key string) string {
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	args := PutAppendArgs{
+		Key:   key,
+		Value: value,
+		Op:    op,
+		ClientId: ck.me,
+		MsgId: atomic.AddInt64(&ck.globalId,1),
+	}
+	DPrintf("[client.PutAppend]: Client %v key %v value %v", ck.me, key, value)
+	var reply PutAppendReply
+	for i := 0; i < 8000; i++ {
+		reply = PutAppendReply{}
+		ok := ck.servers[ck.leaderId].Call("KVServer.PutAppend", &args, &reply)
+		// some tricky bug may happen if don't wait and print too much logs
+		if !ok || reply.Err == "NotLeaderError" {
+			time.Sleep(time.Millisecond * 10)
+			ck.leaderId = (ck.leaderId + 1) % len(ck.servers)
+		} else {
+			time.Sleep(time.Millisecond * 100)
+			return
+		}
+	}
 }
 
 func (ck *Clerk) Put(key string, value string) {

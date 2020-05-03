@@ -318,10 +318,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				}
 				// apply logs
 				go rf.apply()
-				if len(args.Entries) != 0 {
-					DPrintf("[AppendEntries]: Id %v Term %v apply log to %v", rf.me,
-						rf.CurrentTerm, rf.commitIndex)
-				}
 			}
 
 
@@ -476,10 +472,11 @@ func (rf *Raft) broadcastAppendEntries(index int, term int, commitIndex int,
 
 				if reply.Success == false {
 					rf.mu.Lock()
-					if len(args.Entries) > 0 {
-						DPrintf("[broadcastAppendEntries]: Id %v Term %v fail",
-							rf.me, rf.CurrentTerm)
-					}
+					//if len(args.Entries) > 0 {
+					//	DPrintf("[broadcastAppendEntries]: Id %v Term %v fail",
+					//		rf.me, rf.CurrentTerm)
+					//}
+
 					// 这里比较的是args中的term和reply的term，
 					// 不比较rf.CurrentTerm的原因在于，等待reply返回的这一段时间里，
 					// 可能CurrentTerm发生了变化，而这种变化有可能是错误的
@@ -507,8 +504,8 @@ func (rf *Raft) broadcastAppendEntries(index int, term int, commitIndex int,
 					}
 				} else {
 					if len(args.Entries) > 0 {
-						DPrintf("[broadcastAppendEntries]: Id %v Term %v succeed",
-							rf.me, rf.CurrentTerm)
+						DPrintf("[broadcastAppendEntries]: Id %v Term %v succeed from %v",
+							rf.me, rf.CurrentTerm, i)
 					}
 					// success replicate to peer
 					rf.mu.Lock()
@@ -526,8 +523,6 @@ func (rf *Raft) broadcastAppendEntries(index int, term int, commitIndex int,
 							// notify other peers to commit
 							go rf.broadcastHeartBeat()
 							go rf.apply()
-							DPrintf("[broadcastAppendEntries]: Id %v Term %v commit %v", rf.me,
-								rf.CurrentTerm, rf.commitIndex)
 						}
 					}
 					rf.mu.Unlock()
@@ -551,6 +546,7 @@ func (rf *Raft) apply() {
 			rf.lastApplied = i
 			rf.applyChan <- applyMsg
 		}
+		DPrintf("[raft.apply]: Id %v commit to %v", rf.me, rf.commitIndex)
 	}
 }
 
