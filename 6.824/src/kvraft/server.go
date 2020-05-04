@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -61,9 +61,11 @@ func (kv *KVServer) applyLoop() {
 	for !kv.killed() {
 		select {
 		case msg := <-kv.applyCh:
-			DPrintf("[applyLoop]: %v apply %v", kv.me, msg.CommandIndex)
 			if msg.CommandValid {
+				DPrintf("[applyLoop]: %v apply %v", kv.me, msg.CommandIndex)
 				kv.apply(msg)
+			} else {
+
 			}
 		}
 	}
@@ -187,16 +189,13 @@ func (kv *KVServer) killed() bool {
 // StartKVServer() must return quickly, so it should start goroutines
 // for any long-running work.
 //
-var onceRegister sync.Once
 
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	onceRegister.Do(func() {
-		labgob.Register(Op{})
-		labgob.Register(PutAppendArgs{})
-		labgob.Register(GetArgs{})
-	})
+	labgob.Register(Op{})
+	labgob.Register(PutAppendArgs{})
+	labgob.Register(GetArgs{})
 
 	kv := new(KVServer)
 	kv.me = me

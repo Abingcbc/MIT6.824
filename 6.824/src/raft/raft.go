@@ -222,6 +222,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			lastLogIndex := rf.getLastLogUnLock().Index
 			lastLogTerm := rf.getLastLogUnLock().Term
 			// if candidate's log is more up-to-date than server
+			DPrintf("[RequestVote]: Id %v-%v log %v-%v term %v-%v",
+				rf.me, args.CandidateId, lastLogIndex, args.LastLogIndex,
+				lastLogTerm, args.LastLogTerm)
 			if lastLogTerm < args.LastLogTerm ||
 				(lastLogTerm == args.LastLogTerm && lastLogIndex <= args.LastLogIndex) {
 				rf.VotedFor = args.CandidateId
@@ -668,7 +671,6 @@ func (rf *Raft) electionCheckLoop() {
 
 func (rf *Raft) startOneElection() {
 	rf.mu.Lock()
-
 	// turn to candidate
 	rf.state = 1
 	rf.CurrentTerm++
@@ -687,12 +689,8 @@ func (rf *Raft) startOneElection() {
 			}
 
 			rf.mu.Lock()
-			lastLogIndex := 0
-			lastLogTerm := 0
-			if len(rf.Log) != 0 {
-				lastLogIndex = rf.getLastLogUnLock().Index
-				lastLogTerm = rf.getLogByIndexUnLock(lastLogIndex).Term
-			}
+			lastLogIndex := rf.getLastLogUnLock().Index
+			lastLogTerm := rf.getLogByIndexUnLock(lastLogIndex).Term
 			args := RequestVoteArgs{
 				Term:         rf.CurrentTerm,
 				CandidateId:  rf.me,
@@ -832,14 +830,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.resetElectionTimer()
 	rf.electionTimeoutChan = make(chan bool)
 	rf.heartbeatTimeoutChan = make(chan bool)
-	rf.CurrentTerm = 0
 	rf.VotedFor = -1
-	rf.commitIndex = 0
-	rf.lastApplied = 0
 	rf.Log = make([]LogEntry, 0)
 	size := len(rf.peers)
 	rf.nextIndex = make([]int, size)
 	rf.matchIndex = make([]int, size)
+	rf.snapshot = Snapshot{
+		Index: 0,
+		Term:  0,
+		Log:   nil,
+	}
+	rf.CurrentTerm = rf.snapshot.Term
+	rf.commitIndex = rf.snapshot.Index
+	rf.lastApplied = rf.snapshot.Index
 
 	go rf.electionCheckLoop()
 	go rf.heartBeatLoop()
