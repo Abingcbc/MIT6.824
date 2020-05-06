@@ -4,6 +4,7 @@ import (
 	"../labgob"
 	"../labrpc"
 	"../raft"
+	"bytes"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,8 @@ type KVServer struct {
 	// Your definitions here.
 	Storage     map[string]string
 	ClientMsgId map[int64]int64
+	// for snapshot
+	lastLogIndex int
 }
 
 func (kv *KVServer) isRepeated(clientId int64, msgId int64, update bool) bool {
@@ -65,7 +68,10 @@ func (kv *KVServer) applyLoop() {
 				DPrintf("[applyLoop]: %v apply %v", kv.me, msg.CommandIndex)
 				kv.apply(msg)
 			} else {
-
+				if snapshot, ok := msg.Command.(raft.Snapshot); ok {
+					kv.updateFromSnapshot(snapshot.Index, snapshot.Storage)
+				}
+				kv.ifSnapshot()
 			}
 		}
 	}
@@ -76,6 +82,7 @@ func (kv *KVServer) apply(msg raft.ApplyMsg) {
 	if op.OpType != "Get" {
 		command := op.Command.(PutAppendArgs)
 		if !kv.isRepeated(command.ClientId, command.MsgId, true) {
+			kv.mu.Lock()
 			if op.OpType == "Put" {
 				kv.Storage[command.Key] = command.Value
 			} else if op.OpType == "Append" {
@@ -90,6 +97,7 @@ func (kv *KVServer) apply(msg raft.ApplyMsg) {
 					"%v key %v", kv.me, command.ClientId, command.MsgId,
 					op.OpType, command.Key)
 			}
+			kv.mu.Unlock()
 		}
 	} else {
 		command := op.Command.(GetArgs)
@@ -99,6 +107,7 @@ func (kv *KVServer) apply(msg raft.ApplyMsg) {
 	case op.NotifyChan <- true:
 	default:
 	}
+	kv.ifSnapshot()
 }
 
 func (kv *KVServer) requestRaft(clientId int64, msgId int64,
@@ -111,13 +120,17 @@ func (kv *KVServer) requestRaft(clientId int64, msgId int64,
 		NotifyChan: make(chan bool),
 		OpType:     opType,
 	}
-	_, _, isLeader := kv.rf.Start(op)
+	index, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
 		return false
 	}
 	DPrintf("[requestRaft]: %v ClientId %v MsgId %v", kv.me, clientId, msgId)
 	select {
 	case <-op.NotifyChan:
+		// update newest index for snapshot
+		kv.mu.Lock()
+		kv.lastLogIndex = index
+		kv.mu.Unlock()
 		return true
 	case <-time.After(time.Millisecond * 1000):
 		return false
@@ -129,7 +142,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// get also need to commit
 	msg := kv.requestRaft(-1, -1, *args, "Get")
 	if msg {
+		kv.mu.Lock()
 		value, ok := kv.Storage[args.Key]
+		kv.mu.Unlock()
 		if ok {
 			//DPrintf("[server.Get]: key %v", args.Key)
 			reply.Value = value
@@ -152,6 +167,36 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	} else {
 		reply.Err = "NotLeaderError"
 	}
+}
+
+func (kv *KVServer) ifSnapshot() {
+	if kv.maxraftstate != -1 && kv.rf.Persister.RaftStateSize() >= kv.maxraftstate {
+		writer := new(bytes.Buffer)
+		encoder := labgob.NewEncoder(writer)
+		encoder.Encode(kv.ClientMsgId)
+		encoder.Encode(kv.Storage)
+		data := writer.Bytes()
+		kv.rf.SaveSnapshot(kv.lastLogIndex, data)
+	}
+}
+
+// for follower
+func (kv *KVServer) updateFromSnapshot(index int, data []byte)  {
+	if data == nil || len(data) < 1 {
+		return
+	}
+	// follower should obey leader's index
+	kv.mu.Lock()
+	kv.lastLogIndex = index
+	reader := bytes.NewBuffer(data)
+	decoder := labgob.NewDecoder(reader)
+	if decoder.Decode(&kv.ClientMsgId) != nil ||
+		decoder.Decode(&kv.Storage) != nil  {
+		DPrintf("Error in unmarshal raft state")
+	}
+	log.Printf("[updateFromSnapshot]: Id %v update to %v",
+		kv.me, index)
+	kv.mu.Unlock()
 }
 
 //

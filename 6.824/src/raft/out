@@ -1,38 +1,142 @@
 Test (2A): initial election ...
-  ... Passed --   3.5  3   48   13476    0
+2020/05/05 22:04:45 [startOneElection]: Id 2 Term 1 win the leader
+  ... Passed --   3.5  3   52   17914    0
 Test (2A): election after network failure ...
-  ... Passed --   5.6  3  114   23095    0
+2020/05/05 22:04:48 [startOneElection]: Id 1 Term 1 win the leader
+2020/05/05 22:04:49 [startOneElection]: Id 0 Term 2 win the leader
+2020/05/05 22:04:52 [startOneElection]: Id 2 Term 6 win the leader
+  ... Passed --   5.0  3  102   26389    0
 Test (2B): basic agreement ...
-  ... Passed --   0.7  3   16    4539    3
+2020/05/05 22:04:53 [startOneElection]: Id 0 Term 1 win the leader
+  ... Passed --   0.6  3   16    5543    3
 Test (2B): RPC byte count ...
-  ... Passed --   0.9  3   48  154462   11
+2020/05/05 22:04:54 [startOneElection]: Id 1 Term 1 win the leader
+  ... Passed --   0.8  3   48  152841   11
 Test (2B): agreement despite follower disconnection ...
-  ... Passed --   5.3  3  111   30586    8
+2020/05/05 22:04:55 [startOneElection]: Id 2 Term 1 win the leader
+2020/05/05 22:04:56 [startOneElection]: Id 2 Term 4 win the leader
+  ... Passed --   3.2  3   81   27175    7
 Test (2B): no agreement if too many followers disconnect ...
-  ... Passed --   3.8  5  160   37454    3
+2020/05/05 22:04:58 [startOneElection]: Id 1 Term 1 win the leader
+2020/05/05 22:05:01 [startOneElection]: Id 1 Term 6 win the leader
+  ... Passed --   3.6  5  175   46792    4
 Test (2B): concurrent Start()s ...
-  ... Passed --   1.0  3   28    8072    6
+2020/05/05 22:05:02 [startOneElection]: Id 1 Term 1 win the leader
+  ... Passed --   1.0  3   30   11091    6
 Test (2B): rejoin of partitioned leader ...
-  ... Passed --   4.6  3  127   29683    4
+2020/05/05 22:05:03 [startOneElection]: Id 1 Term 1 win the leader
+2020/05/05 22:05:04 [startOneElection]: Id 2 Term 2 win the leader
+2020/05/05 22:05:05 [startOneElection]: Id 0 Term 4 win the leader
+2020/05/05 22:05:06 [startOneElection]: Id 0 Term 6 win the leader
+  ... Passed --   6.2  3  166   52273    4
 Test (2B): leader backs up quickly over incorrect follower logs ...
-  ... Passed --   8.9  5 1642 1147674  102
+2020/05/05 22:05:09 [startOneElection]: Id 4 Term 1 win the leader
+2020/05/05 22:05:10 [startOneElection]: Id 3 Term 2 win the leader
+2020/05/05 22:05:12 [startOneElection]: Id 1 Term 6 win the leader
+2020/05/05 22:05:15 [startOneElection]: Id 1 Term 8 win the leader
+  ... Passed --   8.7  5 1637 1259704  103
 Test (2B): RPC counts aren't too high ...
-  ... Passed --   2.5  3   60   18449   12
+2020/05/05 22:05:18 [startOneElection]: Id 0 Term 1 win the leader
+  ... Passed --   2.5  3   64   23760   12
 Test (2C): basic persistence ...
-  ... Passed --   4.2  3   74   19255    6
+2020/05/05 22:05:20 [startOneElection]: Id 0 Term 1 win the leader
+2020/05/05 22:05:20 [startOneElection]: Id 2 Term 2 win the leader
+2020/05/05 22:05:21 [startOneElection]: Id 1 Term 3 win the leader
+2020/05/05 22:05:22 [startOneElection]: Id 0 Term 4 win the leader
+  ... Passed --   3.7  3   72   23619    6
 Test (2C): more persistence ...
-  ... Passed --  18.0  5  829  189576   16
+2020/05/05 22:05:24 [startOneElection]: Id 2 Term 1 win the leader
+2020/05/05 22:05:26 [startOneElection]: Id 0 Term 4 win the leader
+2020/05/05 22:05:26 [startOneElection]: Id 0 Term 6 win the leader
+2020/05/05 22:05:30 [startOneElection]: Id 3 Term 9 win the leader
+2020/05/05 22:05:32 [startOneElection]: Id 1 Term 12 win the leader
+2020/05/05 22:05:34 [startOneElection]: Id 4 Term 16 win the leader
+2020/05/05 22:05:35 [startOneElection]: Id 4 Term 18 win the leader
+2020/05/05 22:05:38 [startOneElection]: Id 2 Term 21 win the leader
+  ... Passed --  15.3  5  743  210170   16
 Test (2C): partitioned leader and one follower crash, leader restarts ...
-  ... Passed --   2.1  3   35    8974    4
+2020/05/05 22:05:39 [startOneElection]: Id 1 Term 1 win the leader
+2020/05/05 22:05:40 [startOneElection]: Id 1 Term 3 win the leader
+  ... Passed --   1.7  3   35   10741    4
 Test (2C): Figure 8 ...
-  ... Passed --  32.2  5  811  182625   37
+2020/05/05 22:05:41 [startOneElection]: Id 1 Term 1 win the leader
+2020/05/05 22:05:41 [startOneElection]: Id 0 Term 2 win the leader
+2020/05/05 22:05:42 [startOneElection]: Id 4 Term 3 win the leader
+2020/05/05 22:05:42 [startOneElection]: Id 2 Term 4 win the leader
+2020/05/05 22:05:43 [startOneElection]: Id 4 Term 5 win the leader
+2020/05/05 22:05:44 [startOneElection]: Id 3 Term 6 win the leader
+2020/05/05 22:05:44 [startOneElection]: Id 2 Term 7 win the leader
+2020/05/05 22:05:46 [startOneElection]: Id 1 Term 10 win the leader
+2020/05/05 22:05:47 [startOneElection]: Id 4 Term 11 win the leader
+2020/05/05 22:05:48 [startOneElection]: Id 0 Term 12 win the leader
+2020/05/05 22:05:48 [startOneElection]: Id 2 Term 13 win the leader
+2020/05/05 22:05:49 [startOneElection]: Id 4 Term 14 win the leader
+2020/05/05 22:05:50 [startOneElection]: Id 4 Term 15 win the leader
+2020/05/05 22:05:50 [startOneElection]: Id 3 Term 16 win the leader
+2020/05/05 22:05:51 [startOneElection]: Id 0 Term 17 win the leader
+2020/05/05 22:05:52 [startOneElection]: Id 0 Term 19 win the leader
+2020/05/05 22:05:53 [startOneElection]: Id 4 Term 20 win the leader
+2020/05/05 22:05:54 [startOneElection]: Id 1 Term 22 win the leader
+2020/05/05 22:05:55 [startOneElection]: Id 4 Term 23 win the leader
+2020/05/05 22:05:55 [startOneElection]: Id 0 Term 24 win the leader
+2020/05/05 22:05:56 [startOneElection]: Id 2 Term 26 win the leader
+2020/05/05 22:05:57 [startOneElection]: Id 0 Term 27 win the leader
+2020/05/05 22:05:58 [startOneElection]: Id 4 Term 28 win the leader
+2020/05/05 22:05:58 [startOneElection]: Id 0 Term 29 win the leader
+2020/05/05 22:05:59 [startOneElection]: Id 1 Term 30 win the leader
+2020/05/05 22:06:00 [startOneElection]: Id 3 Term 31 win the leader
+2020/05/05 22:06:01 [startOneElection]: Id 0 Term 32 win the leader
+2020/05/05 22:06:01 [startOneElection]: Id 0 Term 33 win the leader
+2020/05/05 22:06:02 [startOneElection]: Id 4 Term 34 win the leader
+2020/05/05 22:06:03 [startOneElection]: Id 2 Term 35 win the leader
+2020/05/05 22:06:04 [startOneElection]: Id 3 Term 36 win the leader
+2020/05/05 22:06:04 [startOneElection]: Id 3 Term 37 win the leader
+2020/05/05 22:06:05 [startOneElection]: Id 3 Term 38 win the leader
+2020/05/05 22:06:05 [startOneElection]: Id 0 Term 39 win the leader
+2020/05/05 22:06:06 [startOneElection]: Id 4 Term 40 win the leader
+2020/05/05 22:06:07 [startOneElection]: Id 0 Term 41 win the leader
+2020/05/05 22:06:08 [startOneElection]: Id 3 Term 42 win the leader
+2020/05/05 22:06:08 [startOneElection]: Id 4 Term 43 win the leader
+2020/05/05 22:06:09 [startOneElection]: Id 1 Term 45 win the leader
+2020/05/05 22:06:10 [startOneElection]: Id 0 Term 46 win the leader
+2020/05/05 22:06:11 [startOneElection]: Id 2 Term 47 win the leader
+2020/05/05 22:06:11 [startOneElection]: Id 2 Term 48 win the leader
+2020/05/05 22:06:12 [startOneElection]: Id 3 Term 49 win the leader
+2020/05/05 22:06:12 [startOneElection]: Id 4 Term 50 win the leader
+2020/05/05 22:06:13 [startOneElection]: Id 0 Term 51 win the leader
+2020/05/05 22:06:14 [startOneElection]: Id 4 Term 52 win the leader
+2020/05/05 22:06:14 [startOneElection]: Id 2 Term 53 win the leader
+  ... Passed --  34.3  5  992  275846   47
 Test (2C): unreliable agreement ...
-  ... Passed --   1.7  5 1444  469207  246
+2020/05/05 22:06:16 [startOneElection]: Id 4 Term 2 win the leader
+  ... Passed --   2.2  5 1440  572821  246
 Test (2C): Figure 8 (unreliable) ...
-  ... Passed --  40.6  5 9142 31537929  190
+2020/05/05 22:06:17 [startOneElection]: Id 3 Term 1 win the leader
+2020/05/05 22:06:18 [startOneElection]: Id 0 Term 2 win the leader
+2020/05/05 22:06:20 [startOneElection]: Id 2 Term 5 win the leader
+2020/05/05 22:06:21 [startOneElection]: Id 4 Term 8 win the leader
+2020/05/05 22:06:23 [startOneElection]: Id 3 Term 13 win the leader
+2020/05/05 22:06:27 [startOneElection]: Id 1 Term 23 win the leader
+2020/05/05 22:06:29 [startOneElection]: Id 0 Term 24 win the leader
+2020/05/05 22:06:33 [startOneElection]: Id 2 Term 32 win the leader
+2020/05/05 22:06:35 [startOneElection]: Id 4 Term 37 win the leader
+2020/05/05 22:06:37 [startOneElection]: Id 3 Term 39 win the leader
+2020/05/05 22:06:38 [startOneElection]: Id 1 Term 43 win the leader
+2020/05/05 22:06:39 [startOneElection]: Id 0 Term 46 win the leader
+2020/05/05 22:06:40 [startOneElection]: Id 0 Term 48 win the leader
+2020/05/05 22:06:43 [startOneElection]: Id 4 Term 56 win the leader
+2020/05/05 22:06:45 [startOneElection]: Id 0 Term 63 win the leader
+2020/05/05 22:06:48 [startOneElection]: Id 0 Term 74 win the leader
+  ... Passed --  32.7  5 9403 17112706  122
 Test (2C): churn ...
-  ... Passed --  16.3  5 16900 41857353 2122
+2020/05/05 22:06:50 [startOneElection]: Id 0 Term 1 win the leader
+2020/05/05 22:06:56 [startOneElection]: Id 0 Term 3 win the leader
+2020/05/05 22:06:58 [startOneElection]: Id 1 Term 4 win the leader
+  ... Passed --  16.2  5 23711 56655528 2934
 Test (2C): unreliable churn ...
-  ... Passed --  16.1  5 6128 5154147  863
+2020/05/05 22:07:07 [startOneElection]: Id 1 Term 2 win the leader
+2020/05/05 22:07:11 [startOneElection]: Id 1 Term 10 win the leader
+2020/05/05 22:07:19 [startOneElection]: Id 1 Term 21 win the leader
+  ... Passed --  16.1  5 4348 6102688  606
 PASS
-ok  	_/Users/cbc/Project/Go/MIT6.824/6.824/src/raft	169.769s
+ok  	_/Users/cbc/Project/Go/MIT6.824/6.824/src/raft	161.475s
