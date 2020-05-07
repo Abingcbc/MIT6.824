@@ -107,6 +107,7 @@ func (kv *KVServer) apply(msg raft.ApplyMsg) {
 	case op.NotifyChan <- true:
 	default:
 	}
+	// may be redundant
 	kv.ifSnapshot()
 }
 
